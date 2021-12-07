@@ -16,10 +16,12 @@ class SimpleGarageDoorOpener {
 
     //get config values
     this.name = config['name'];
-    this.doorSwitchPin = config['doorSwitchPin'] || 12;
-    this.simulateTimeOpening = config['simulateTimeOpening'] || 15;
-    this.simulateTimeOpen = config['simulateTimeOpen'] || 30;
-    this.simulateTimeClosing = config['simulateTimeClosing'] || 15;
+    this.doorSwitchPin = config['doorSwitchPin'] || 3;
+    this.doorSwitchPinClose = config['doorSwitchPinClose'] || 7;
+    this.doorSwitchPinLed = config['doorSwitchPinLed'] || 10;
+    this.simulateTimeOpening = config['simulateTimeOpening'] || 28;
+    this.simulateTimeOpen = config['simulateTimeOpen'] || 20;
+    this.simulateTimeClosing = config['simulateTimeClosing'] || 28;
 
     //initial setup
     this.log = log;
@@ -29,9 +31,9 @@ class SimpleGarageDoorOpener {
 
     this.informationService = new Service.AccessoryInformation();
     this.informationService
-      .setCharacteristic(Characteristic.Manufacturer, 'Simple Garage Door')
-      .setCharacteristic(Characteristic.Model, 'A Remote Control')
-      .setCharacteristic(Characteristic.SerialNumber, '0711');
+      .setCharacteristic(Characteristic.Manufacturer, 'Metadata')
+      .setCharacteristic(Characteristic.Model, 'Gate Opener')
+      .setCharacteristic(Characteristic.SerialNumber, '3331');
   }
 
   getServices () {
@@ -39,7 +41,9 @@ class SimpleGarageDoorOpener {
   }
 
   setupGarageDoorOpenerService (service) {
-    rpio.open(this.doorSwitchPin, rpio.OUTPUT, rpio.LOW);
+    rpio.open(this.doorSwitchPin, rpio.OUTPUT, rpio.HIGH);
+    rpio.open(this.doorSwitchPinLed, rpio.OUTPUT, rpio.HIGH);
+    rpio.open(this.doorSwitchPinClose, rpio.OUTPUT, rpio.HIGH);
 
     this.service.setCharacteristic(Characteristic.TargetDoorState, Characteristic.TargetDoorState.CLOSED);
     this.service.setCharacteristic(Characteristic.CurrentDoorState, Characteristic.CurrentDoorState.CLOSED);
@@ -55,33 +59,134 @@ class SimpleGarageDoorOpener {
         }
       })
       .on('set', (value, callback) => {
-        if (value === Characteristic.TargetDoorState.OPEN) {
           this.lastOpened = new Date();
           switch (service.getCharacteristic(Characteristic.CurrentDoorState).value) {
             case Characteristic.CurrentDoorState.CLOSED:
+              if (value === Characteristic.TargetDoorState.OPEN) {
+                  this.lastOpened = new Date();
+                  this.openGarageDoor(callback);
+                  this.service.setCharacteristic(Characteristic.CurrentDoorState, Characteristic.CurrentDoorState.OPENING);
+                    setTimeout(() => {
+                      this.service.setCharacteristic(Characteristic.CurrentDoorState, Characteristic.CurrentDoorState.OPEN);
+                    }, this.simulateTimeOpening * 1000);
+                } else {
+                callback();
+              }
+              break;
             case Characteristic.CurrentDoorState.CLOSING:
-            case Characteristic.CurrentDoorState.OPEN:
               this.openGarageDoor(callback);
+              this.service.setCharacteristic(Characteristic.CurrentDoorState, Characteristic.CurrentDoorState.OPENING);
+              setTimeout(() => {
+                  this.service.setCharacteristic(Characteristic.CurrentDoorState, Characteristic.CurrentDoorState.OPEN);
+                }, this.simulateTimeOpening * 1000);
+              break;
+            case Characteristic.CurrentDoorState.OPEN:
+              if (value === Characteristic.TargetDoorState.CLOSED) {
+                  this.lastOpened = new Date();
+                  this.closeGarageDoor(callback);
+                  this.service.setCharacteristic(Characteristic.CurrentDoorState, Characteristic.CurrentDoorState.CLOSING);
+                    setTimeout(() => {
+                      this.service.setCharacteristic(Characteristic.CurrentDoorState, Characteristic.CurrentDoorState.CLOSED);
+                  }, this.simulateTimeClosing * 1000);
+                } else {
+                callback();
+              }
+              break;
+            case Characteristic.CurrentDoorState.OPENING:
+              this.closeGarageDoor(callback);
+              this.service.setCharacteristic(Characteristic.CurrentDoorState, Characteristic.CurrentDoorState.CLOSING);
+              setTimeout(() => {
+                  this.service.setCharacteristic(Characteristic.CurrentDoorState, Characteristic.CurrentDoorState.CLOSED);
+                }, this.simulateTimeClosing * 1000);
               break;
             default:
+            this.closeGarageDoor(callback);
+            this.service.setCharacteristic(Characteristic.CurrentDoorState, Characteristic.CurrentDoorState.CLOSED);
               callback();
           }
-        } else {
-          callback();
-        }
       });
   }
 
   openGarageDoor (callback) {
-    rpio.write(this.doorSwitchPin, rpio.HIGH);
-    rpio.sleep(0.5);
+    //otvor pin Open
     rpio.write(this.doorSwitchPin, rpio.LOW);
 
+    /* UZ NEBLIKAM TU ALE CEZ HOMEKIT AUTOMATIZACIE, LEDKA PRIDANA AKO HOMEKIT ZIAROVKA
+    //flashni pin LED
+    rpio.write(this.doorSwitchPinLed, rpio.LOW);
+    rpio.sleep(0.2);
+    rpio.write(this.doorSwitchPinLed, rpio.HIGH);
+    rpio.sleep(0.2);
+    //otvor pin LED
+    rpio.write(this.doorSwitchPinLed, rpio.LOW);
+    UZ NEBLIKAM TU ALE CEZ HOMEKIT AUTOMATIZACIE, LEDKA PRIDANA AKO HOMEKIT ZIAROVKA */
+
+    //casovac na auto close - zavri pin Open a LED (LED flasne)
+    setTimeout(() => {
+      if(this.service.getCharacteristic(Characteristic.CurrentDoorState).value === Characteristic.CurrentDoorState.OPEN){
+          /* UZ NEBLIKAM TU ALE CEZ HOMEKIT AUTOMATIZACIE, LEDKA PRIDANA AKO HOMEKIT ZIAROVKA
+          rpio.write(this.doorSwitchPinLed, rpio.HIGH);
+          rpio.sleep(0.2);
+          rpio.write(this.doorSwitchPinLed, rpio.LOW);
+          rpio.sleep(0.2);
+          rpio.write(this.doorSwitchPinLed, rpio.HIGH);
+          rpio.sleep(0.2);
+          rpio.write(this.doorSwitchPinLed, rpio.LOW);
+          rpio.sleep(0.2);
+          rpio.write(this.doorSwitchPinLed, rpio.HIGH)
+          UZ NEBLIKAM TU ALE CEZ HOMEKIT AUTOMATIZACIE, LEDKA PRIDANA AKO HOMEKIT ZIAROVKA */
+
+          rpio.write(this.doorSwitchPin, rpio.HIGH);
+          this.service.setCharacteristic(Characteristic.TargetDoorState, Characteristic.TargetDoorState.CLOSED);
+          this.service.setCharacteristic(Characteristic.CurrentDoorState, Characteristic.CurrentDoorState.CLOSED);
+          callback();
+      }
+          
+          /*
+          rpio.write(this.doorSwitchPin, rpio.HIGH);
+          rpio.write(this.doorSwitchPinLed, rpio.HIGH);
+          rpio.sleep(0.2);
+          rpio.write(this.doorSwitchPinLed, rpio.LOW);
+          rpio.sleep(0.2);
+          rpio.write(this.doorSwitchPinLed, rpio.HIGH);
+          rpio.sleep(0.2);
+          rpio.write(this.doorSwitchPinLed, rpio.LOW);
+          rpio.sleep(0.2);
+          rpio.write(this.doorSwitchPinLed, rpio.HIGH);*/
+    }, (this.simulateTimeOpen + this.simulateTimeOpening) * 1000);
+
     this.log('Opening the garage door for...');
-    this.simulateGarageDoorOpening();
+    //this.simulateGarageDoorOpening();
     callback();
   }
+  closeGarageDoor (callback) {
+    //zavri pin Open
+    rpio.write(this.doorSwitchPin, rpio.HIGH);
 
+    /* UZ NEBLIKAM TU ALE CEZ HOMEKIT AUTOMATIZACIE, LEDKA PRIDANA AKO HOMEKIT ZIAROVKA
+    //flashni pin LED
+    rpio.write(this.doorSwitchPinLed, rpio.HIGH);
+    rpio.sleep(0.2);
+    rpio.write(this.doorSwitchPinLed, rpio.LOW);
+    rpio.sleep(0.2);
+    rpio.write(this.doorSwitchPinLed, rpio.HIGH);
+    rpio.sleep(0.2);
+    rpio.write(this.doorSwitchPinLed, rpio.LOW);
+    rpio.sleep(0.2);
+    //zavri pin LED
+    rpio.write(this.doorSwitchPinLed, rpio.HIGH);
+    UZ NEBLIKAM TU ALE CEZ HOMEKIT AUTOMATIZACIE, LEDKA PRIDANA AKO HOMEKIT ZIAROVKA */
+
+
+    //otvor a zavri pin Close - brana dojde sama
+    rpio.write(this.doorSwitchPinClose, rpio.LOW);
+    rpio.sleep(0.5);
+    rpio.write(this.doorSwitchPinClose, rpio.HIGH);
+
+    this.log('Closing the garage door for...');
+    //this.simulateGarageDoorOpening();
+    callback();
+  }
 
   simulateGarageDoorOpening () {
     this.service.setCharacteristic(Characteristic.CurrentDoorState, Characteristic.CurrentDoorState.OPENING);
